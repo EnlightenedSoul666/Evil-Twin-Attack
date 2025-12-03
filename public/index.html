@@ -1,0 +1,606 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Secure Wi-Fi Simulator (AP View)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root{
+    --header-h:72px; --header-bg:rgba(10,16,34,.75);
+    --txt:#eaf2ff; --muted:#9db0c7; --btn:#1e7aff; --btn2:#09c6f9;
+    --panel-bg:rgba(8,12,24,.55); --panel-bd:rgba(98,168,255,.35);
+    --log-bg:rgba(10,40,20,.68); --log-bd:rgba(0,200,120,.45);
+  }
+  html,body{height:100%;margin:0;overflow:hidden;background:
+    radial-gradient(1200px 600px at 15% 20%, rgba(0,238,255,.18), transparent 60%),
+    radial-gradient(900px 500px at 85% 10%, rgba(0,255,155,.14), transparent 70%),
+    radial-gradient(700px 500px at 50% 90%, rgba(94,86,250,.16), transparent 70%),
+    linear-gradient(180deg,#0b1020 0%,#070a14 100%);color:var(--txt);
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif}
+  header{height:var(--header-h);display:flex;align-items:center;gap:10px;padding:14px 18px;background:var(--header-bg);
+    backdrop-filter:blur(10px);border-bottom:1px solid rgba(120,180,255,.15);box-shadow:0 10px 40px rgba(0,0,0,.35);z-index:1002}
+  .btn{appearance:none;border:none;cursor:pointer;padding:10px 16px;border-radius:12px;font-weight:800;color:white;background:linear-gradient(135deg,var(--btn),var(--btn2));
+    box-shadow:0 6px 20px rgba(30,122,255,.35),0 0 0 2px rgba(80,160,255,.15) inset;transition:transform .08s,box-shadow .2s,filter .2s}
+  .btn:hover{filter:brightness(1.08);box-shadow:0 10px 26px rgba(9,198,249,.45)}
+  .muted{color:var(--muted);font-size:13px}
+  .tool{display:flex;align-items:center;gap:8px;margin-left:10px;padding:8px 10px;border-radius:12px;background:rgba(255,255,255,.06);border:1px solid rgba(120,180,255,.18)}
+  .panel{position:fixed;right:18px;top:calc(var(--header-h) + 18px);width:380px;padding:14px;background:var(--panel-bg);border:1px solid var(--panel-bd);
+    border-radius:16px;backdrop-filter:blur(12px);box-shadow:0 14px 50px rgba(0,0,0,.45);z-index:1001}
+  .row{display:flex;gap:10px;margin-bottom:10px}
+  .input,.select,.textarea{flex:1;padding:11px 12px;border-radius:12px;color:var(--txt);background:rgba(8,14,30,.7);border:1px solid rgba(120,180,255,.25);outline:none;font-weight:700}
+  .textarea{height:120px;resize:vertical}
+  #canvas{position:fixed;left:0;right:0;top:var(--header-h);bottom:0;width:100vw;height:calc(100vh - var(--header-h));box-shadow:inset 0 0 120px rgba(0,0,0,.55)}
+
+  .feed{position:fixed;left:18px;top:calc(var(--header-h) + 18px);width:380px;background:var(--log-bg);
+    border:1px solid var(--log-bd);border-radius:16px;padding:12px;backdrop-filter:blur(10px);
+    box-shadow:0 14px 50px rgba(0,0,0,.45);max-height:calc(100vh - var(--header-h) - 36px);overflow:auto;z-index:1001}
+  .feed h3{margin:4px 6px 10px 6px;font-size:16px;display:flex;align-items:center;justify-content:space-between}
+  .feed .latest{margin:0 6px 10px 6px;padding:8px;border-radius:10px;background:rgba(12,80,38,.55);border:1px solid rgba(0,200,120,.35);font-size:12px}
+  .feed .list{margin-top:6px}
+  .feed .line{display:flex;align-items:center;gap:8px;padding:6px 8px;margin:2px 6px;border-radius:8px;background:rgba(10,55,28,.55);border:1px solid rgba(0,200,120,.2);
+    font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  .modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(3,8,20,.85);z-index:2000}
+  .modal.open{display:flex}
+  .card{width:min(860px,92vw);background:#0a1224;border:1px solid rgba(120,180,255,.25);border-radius:16px;box-shadow:0 24px 80px rgba(0,0,0,.6);padding:18px}
+  .grid{display:grid;grid-template-columns:160px 1fr;gap:8px}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;word-break:break-word}
+
+  .drag-handle{height:12px;margin:-6px -6px 10px -6px;border-radius:10px;background:linear-gradient(90deg, rgba(255,255,255,.15), rgba(255,255,255,.05));
+    border:1px solid rgba(255,255,255,.1);cursor:grab}
+  .drag-handle:active{cursor:grabbing}
+  body.dragging{user-select:none;cursor:grabbing !important}
+</style>
+</head>
+<body>
+<header>
+  <div style="font-weight:800;display:flex;align-items:center;gap:10px"><span style="width:28px;height:28px;border-radius:9px;background:linear-gradient(135deg,#00c6ff,#0072ff);display:grid;place-items:center">📶</span>Secure Wi-Fi Simulator <span class="muted">(AP View)</span></div>
+  <button id="refresh" class="btn">Refresh Topology</button>
+  <button id="pauseAll" class="btn">⏸️ Pause & Inspect</button>
+
+  <div class="tool" title="Set packet speed (cm/s)">
+    <span class="muted">Speed</span>
+    <input id="spd" type="range" min="0.2" max="7" step="0.1" value="0.5" list="spdTicks">
+    <datalist id="spdTicks">
+      <option value="0.5"></option><option value="1"></option><option value="2"></option>
+      <option value="3"></option><option value="5"></option><option value="7"></option>
+    </datalist>
+    <span class="muted"><span id="spdval">0.5</span> cm/s</span>
+  </div>
+
+  <div class="muted">Envelopes • RSA-OAEP • Beacons • Evil twin</div>
+</header>
+
+<!-- RIGHT control panel (draggable) -->
+<div class="panel draggable" id="ctrlPanel">
+  <div class="drag-handle" title="Drag"></div>
+  <div class="row">
+    <input id="deviceName" class="input" placeholder="New device name (e.g., Device3)" />
+    <button id="addBtn" class="btn">Add Device</button>
+  </div>
+  <div class="row">
+    <input id="apName" class="input" placeholder="New AP name (e.g., AP2)" />
+    <button id="addApBtn" class="btn">Add AP</button>
+  </div>
+  <div class="row">
+    <input id="rogueName" class="input" placeholder="Rogue AP name (e.g., AP-evil)" />
+    <button id="addRogueBtn" class="btn">Add Rogue AP</button>
+  </div>
+  <div class="muted">Click a circle to open its log. Devices are offline by default; connect via beacon to any AP (white). Rogue AP can send a <b>malicious beacon</b> (dark red) to hijack a device.</div>
+</div>
+
+<!-- LEFT feed (draggable) -->
+<div class="feed draggable" id="feed">
+  <div class="drag-handle" title="Drag"></div>
+  <h3>Packets <button class="btn" id="inspectAll">Inspect all</button></h3>
+  <div class="latest" id="latest">(no packets yet)</div>
+  <div class="list" id="feedList"></div>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<!-- Packet inspector -->
+<div class="modal" id="modal">
+  <div class="card">
+    <h3>Packet details</h3>
+    <div class="grid">
+      <div class="muted">Route</div>     <div class="mono" id="pRoute"></div>
+      <div class="muted">Kind</div>      <div class="mono" id="pKind"></div>
+      <div class="muted">Seq</div>       <div class="mono" id="pSeq"></div>
+      <div class="muted">Status</div>    <div class="mono" id="pStatus"></div>
+      <div class="muted">Time</div>      <div class="mono" id="pTime"></div>
+      <div class="muted">Algorithm</div> <div class="mono" id="pAlg"></div>
+      <div class="muted">Ciphertext (base64)</div><div class="mono" id="pCt"></div>
+      <div class="muted">Encrypted text (raw)</div><div class="mono" id="pEncRaw"></div>
+      <div class="muted">Path (linked)</div> <div class="mono" id="pPath"></div>
+      <div class="muted">Private key (PKCS#8 HEX or PEM)</div>
+      <div><textarea id="pPriv" class="textarea" placeholder="-----BEGIN PRIVATE KEY HEX-----&#10;... hex ...&#10;-----END PRIVATE KEY HEX-----"></textarea></div>
+      <div class="muted">Decrypted text</div><div class="mono" id="pPlain">(not decrypted)</div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px">
+      <button class="btn" id="btnDecrypt">Decrypt (RSA)</button>
+      <button class="btn" id="btnResume">Resume</button>
+      <button class="btn" id="btnClose">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Node modal (device/AP) -->
+<div class="modal" id="nmodal">
+  <div class="card" style="width:min(860px,92vw)">
+    <h3 id="nTitle">Node</h3>
+    <div id="deviceControls">
+      <div class="row" style="gap:12px;">
+        <div class="muted" id="nStateText">Status: Offline</div>
+        <select id="nApSelect" class="select" style="max-width:250px;"></select>
+        <button id="nConnect" class="btn">Connect (Beacon)</button>
+        <button id="nGoOffline" class="btn" style="display:none;">Go Offline</button>
+      </div>
+      <div class="row" id="sendRow">
+        <input id="nMsg" class="input" placeholder="Type message…" />
+        <select id="nTarget" class="select"></select>
+        <button id="nSend" class="btn">Send</button>
+      </div>
+      <div id="nStatus" class="muted"></div>
+      <div class="mono" id="nInbox" style="margin-top:10px;max-height:40vh;overflow:auto"></div>
+    </div>
+    <div id="apControls" style="display:none;">
+      <div class="row"><div id="apInfo" class="muted"></div></div>
+      <div id="rogueTools" style="display:none;">
+        <div class="row">
+          <select id="malTarget" class="select"></select>
+          <button id="malSend" class="btn" style="background:linear-gradient(135deg,#b91c1c,#7f1d1d)">Send malicious beacon</button>
+        </div>
+      </div>
+      <div class="mono" id="apInbox" style="margin-top:10px;max-height:40vh;overflow:auto"></div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px">
+      <button class="btn" id="nClose">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- All packets modal -->
+<div class="modal" id="histModal">
+  <div class="card">
+    <h3>All packets (latest first)</h3>
+    <div id="hlist" style="max-height:60vh;overflow:auto;border:1px solid rgba(120,180,255,.2);border-radius:12px"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px">
+      <button class="btn" id="hClose">Close</button>
+    </div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+  /* ---------- helpers ---------- */
+  function hslToHex(h,s,l){ s/=100; l/=100; const k=n=>(n+h/30)%12, a=s*Math.min(l,1-l);
+    const f=n=> l - a*Math.max(-1, Math.min(k(n)-3, Math.min(9-k(n),1)));
+    return '#'+[f(0),f(8),f(4)].map(x=>Math.round(255*x).toString(16).padStart(2,'0')).join('');
+  }
+  const deviceColors=new Map(); let deviceIdx=0;
+  function colorForDevice(id){ if(deviceColors.has(id)) return deviceColors.get(id);
+    const hue=(deviceIdx*137.508)%360; deviceIdx++; const hex=hslToHex(hue,88,58); deviceColors.set(id,hex); return hex; }
+  function hexToRgb(hex){ const h=hex.replace('#',''); const v=parseInt(h,16); return {r:(v>>16)&255,g:(v>>8)&255,b:v&255}; }
+  function rgba(hex,a){ const {r,g,b}=hexToRgb(hex); return `rgba(${r},${g},${b},${a})`; }
+
+  /* ---------- RSA keys (HEX) & save ---------- */
+  const nodeKeys = new Map(); // id -> { publicKey, privateKey, hexPub, hexPriv, saved }
+  function abToHex(buf){ const v=new Uint8Array(buf); let s=''; for(let i=0;i<v.length;i++) s+=v[i].toString(16).padStart(2,'0'); return s; }
+  function hexToAb(hex){ const c=hex.replace(/[^0-9a-f]/gi,''); const u=new Uint8Array(c.length/2); for(let i=0;i<u.length;i++) u[i]=parseInt(c.substr(i*2,2),16); return u.buffer; }
+
+  async function ensureKeypair(id){
+    if(nodeKeys.has(id)) return nodeKeys.get(id);
+    const kp = await crypto.subtle.generateKey(
+      { name:'RSA-OAEP', modulusLength:2048, publicExponent:new Uint8Array([1,0,1]), hash:'SHA-256' },
+      true, ['encrypt','decrypt']
+    );
+    const [spki, pkcs8] = await Promise.all([
+      crypto.subtle.exportKey('spki',  kp.publicKey),
+      crypto.subtle.exportKey('pkcs8', kp.privateKey),
+    ]);
+    const hexPub  = abToHex(spki);
+    const hexPriv = abToHex(pkcs8);
+    const entry = { publicKey: kp.publicKey, privateKey: kp.privateKey, hexPub, hexPriv, saved:false };
+    nodeKeys.set(id, entry);
+    try{
+      await fetch('/api/keys/save', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ id, pubHex:hexPub, privHex:hexPriv })
+      });
+      entry.saved=true;
+    }catch(_){}
+    return entry;
+  }
+  async function rsaEncryptWithId(targetId, text){
+    const keys = await ensureKeypair(targetId);
+    const data = new TextEncoder().encode(text);
+    const ct = await crypto.subtle.encrypt({ name:'RSA-OAEP' }, keys.publicKey, data);
+    return btoa(String.fromCharCode(...new Uint8Array(ct)));
+  }
+  async function importPkcs8FromUser(input){
+    const s=input.trim(); let buf;
+    if(/BEGIN PRIVATE KEY HEX/.test(s)){
+      const hex=s.replace(/-----BEGIN PRIVATE KEY HEX-----/,'')
+                 .replace(/-----END PRIVATE KEY HEX-----/,'')
+                 .replace(/\s+/g,'');
+      buf=hexToAb(hex);
+    }else if(/BEGIN PRIVATE KEY/.test(s)){
+      const b64=s.replace(/-----BEGIN PRIVATE KEY-----/,'')
+                 .replace(/-----END PRIVATE KEY-----/,'').replace(/\s+/g,'');
+      const bin=atob(b64); buf=new Uint8Array([...bin].map(c=>c.charCodeAt(0))).buffer;
+    }else{
+      throw new Error('Provide PKCS#8 private key (HEX or PEM).');
+    }
+    return crypto.subtle.importKey('pkcs8', buf, {name:'RSA-OAEP',hash:'SHA-256'}, false, ['decrypt']);
+  }
+
+  /* ---------- sockets / state ---------- */
+  const socket=io();
+  let topology={ aps:[{id:'AP1',name:'AP1',rogue:false}], devices:[] };
+  const localAps=[];
+  function allAps(){ return [...(topology.aps||[]), ...localAps]; }
+  socket.on('connect', ()=> socket.emit('topology:get'));
+  socket.on('topology:full',  t=>{ topology=t||topology; (topology.devices||[]).forEach(d=>ensureStateFor(d.id)); });
+  socket.on('topology:update',t=>{ topology=t||topology; (topology.devices||[]).forEach(d=>ensureStateFor(d.id)); });
+
+  const deviceState=new Map(); // id -> { online, connected }
+  function ensureStateFor(id){ if(!deviceState.has(id)) deviceState.set(id,{online:false,connected:null}); return deviceState.get(id); }
+
+  /* ---------- speed ---------- */
+  const spdInput=document.getElementById('spd'), spdValEl=document.getElementById('spdval');
+  let speedCmPerSec=parseFloat(spdInput.value);
+  const cmToPx=cm=> cm*(96/2.54);
+  spdInput.addEventListener('input', ()=>{ speedCmPerSec=parseFloat(spdInput.value||'0.5'); spdValEl.textContent=speedCmPerSec.toFixed(1); });
+
+  /* ---------- canvas / drawing ---------- */
+  const canvas=document.getElementById('canvas'), ctx=canvas.getContext('2d');
+  function fitCanvas(){ const dpr=Math.max(1,devicePixelRatio||1); canvas.width=canvas.clientWidth*dpr; canvas.height=canvas.clientHeight*dpr; ctx.setTransform(dpr,0,0,dpr,0,0); }
+  window.addEventListener('resize', fitCanvas); fitCanvas();
+
+  function devicesToDraw(){ return topology.devices.length?topology.devices:[{id:'Device1',name:'Device1'},{id:'Device2',name:'Device2'},{id:'Device3',name:'Device3'}]; }
+  function layoutPositions(){
+    const w=canvas.clientWidth,h=canvas.clientHeight, aps=allAps(), A=aps.length||1, apMap={};
+    aps.forEach((ap,i)=> apMap[ap.id]={x:w*(i+1)/(A+1),y:120, rogue:!!ap.rogue});
+    const devs=devicesToDraw(), N=Math.max(2,devs.length), devMap={};
+    devs.forEach((d,i)=> devMap[d.id]={x:w*(i+1)/(N+1),y:h-150,status:ensureStateFor(d.id).online?'online':'offline'});
+    return {aps, devs, apMap, devMap};
+  }
+  function radialBall(x,y,r,fill,label,online=false,t=0,rogue=false){
+    if(rogue){ctx.strokeStyle='rgba(185,28,28,.45)';ctx.lineWidth=10;ctx.beginPath();ctx.arc(x,y,r+10,0,Math.PI*2);ctx.stroke();}
+    else if(online){const pulse=6+Math.sin(t*2.2)*3.5;ctx.strokeStyle='rgba(39,243,155,.25)';ctx.lineWidth=8;ctx.beginPath();ctx.arc(x,y,r+pulse,0,Math.PI*2);ctx.stroke();}
+    const g=ctx.createRadialGradient(x-6,y-8,r*.15,x,y,r);g.addColorStop(0,fill);g.addColorStop(1,fill);
+    ctx.shadowColor=fill;ctx.shadowBlur=22;ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+    ctx.fillStyle='#fff';ctx.font='700 16px Inter,system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(label,x,y);
+  }
+  function drawEnvelope(x,y,size,color){
+    const w=size,h=size*0.7,r=5, shadow=rgba(color,0.65); ctx.save(); ctx.translate(x-w/2,y-h/2);
+    ctx.fillStyle=color; ctx.strokeStyle='rgba(255,255,255,.55)'; ctx.lineWidth=1; ctx.shadowBlur=14; ctx.shadowColor=shadow;
+    ctx.beginPath(); ctx.moveTo(r,0); ctx.lineTo(w-r,0); ctx.quadraticCurveTo(w,0,w,r); ctx.lineTo(w,h-r);
+    ctx.quadraticCurveTo(w,h,w-r,h); ctx.lineTo(r,h); ctx.quadraticCurveTo(0,h,0,h-r); ctx.lineTo(0,r);
+    ctx.quadraticCurveTo(0,0,r,0); ctx.closePath(); ctx.fill(); ctx.shadowBlur=0;
+    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(w/2,h*0.52); ctx.lineTo(w,0); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,h); ctx.lineTo(w/2,h*0.52); ctx.lineTo(w,h); ctx.stroke(); ctx.restore();
+  }
+
+  /* ---------- feed & packets ---------- */
+  const feedList=document.getElementById('feedList'), latestBox=document.getElementById('latest');
+  const nodeLogs=new Map(); function addToNodeLog(id,p){ const a=nodeLogs.get(id)||[]; const c={...p}; a.unshift(c); nodeLogs.set(id,a.slice(0,100)); if(id===currentNodeId||id===currentApId) renderNodeLog(); return c; }
+  function setFeedTitleFromPath(meta){ if(meta && meta.feedEl) meta.feedEl.title='Path: '+(meta.path?.length?meta.path.join(' → '):'(in flight)'); }
+  function updateLatest(meta){
+    const enc=(meta.alg==='BEACON')?'Beacon (not encrypted)':(meta.alg==='EVIL-BEACON')?'Malicious beacon (not encrypted)':(meta.ciphertextB64?`Encrypted (${meta.alg}) • ${meta.ciphertextB64.length} b64 chars`:(meta.text||'(empty)'));
+    latestBox.innerHTML=`<b>Latest:</b> <span class="mono">#${meta.seq||'?'} • ${meta.from} → ${meta.to}${meta.relayedFrom?` (relay of ${meta.relayedFrom})`:''}</span> <span class="mono"> • ${enc}</span>`;
+  }
+  function addOneLine(meta){
+    const line=document.createElement('div'); line.className='line';
+    const dot=`<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${meta.color};box-shadow:0 0 8px ${rgba(meta.color,0.7)}"></span>`;
+    const enc =
+  (meta.alg==='BEACON')
+    ? `Beacon “${meta.text || ''}” (not encrypted)`
+    : (meta.alg==='EVIL-BEACON')
+      ? `Malicious beacon “${meta.text || ''}” (not encrypted)`
+      : (meta.ciphertextB64 ? `Encrypted (${meta.alg}) • ${meta.ciphertextB64.length} b64 chars`
+                            : (meta.text || '(empty)'));
+
+    line.innerHTML=`${dot}<span class="mono">#${meta.seq||'?'} • ${meta.from} → ${meta.to}${meta.relayedFrom?` <span style="padding:1px 6px;border-radius:9px;background:rgba(50,220,160,.24);border:1px solid rgba(30,210,140,.55)">relay of ${meta.relayedFrom}</span>`:''} • <span class="time">${meta.startTs?new Date(meta.startTs).toLocaleTimeString():'queued'}</span> • ${meta.status||''} • ${enc}</span>`;
+    feedList.prepend(line); meta.feedEl=line; setFeedTitleFromPath(meta); while(feedList.children.length>3) feedList.removeChild(feedList.lastChild);
+  }
+  function updateOneLineTime(meta){ const t=meta.feedEl?.querySelector('.time'); if(t) t.textContent=new Date(meta.startTs).toLocaleTimeString(); }
+
+  const packets=[]; let packetId=1; let globalPaused=false; let lastTick=performance.now();
+  const allPackets=[], metaById=new Map(), lastUplinkBySender=new Map();
+  const seqBySender=new Map(); function nextSeq(id){const n=(seqBySender.get(id)||0)+1; seqBySender.set(id,n); return n;}
+
+  function spawn(kind,p){
+    const obj={kind,id:packetId++,...p,progress:0,frozen:false,done:false,waitForRef:null,armed:false,started:false,startTs:null,
+               histHead:null,histTail:null,metaRef:null,logFrom:null,logTo:null,logFromData:null,logToData:null,color:'#22c55e'};
+    // color
+    if(p.isBeacon){ obj.color = p.malicious ? '#8B0000' : '#ffffff'; }
+    else if(kind==='up'){ obj.color = colorForDevice(p.from); }
+    else { const src=p.relayedFrom||p.from; obj.color=colorForDevice(src); }
+    // meta
+    const meta={id:obj.id,seq:p.seq||'?',kind,from:p.from,to:p.to,relayedFrom:p.relayedFrom||null,status:p.status||'',tsQueued:Date.now(),startTs:null,
+                alg:p.alg||(p.isBeacon?(p.malicious?'EVIL-BEACON':'BEACON'):'RSA-OAEP-256'),
+                ciphertextB64:p.ciphertextB64||'',text:p.text||'',path:[],addedToFeed:false,color:obj.color};
+    obj.metaRef=meta; metaById.set(obj.id,meta); allPackets.unshift(meta); updateLatest(meta);
+
+    obj.logFromData={...p,kind}; obj.logToData={...p,kind};
+
+    if(kind==='up'){ lastUplinkBySender.set(p.from,obj); obj.armed=true; }
+    else{ obj.waitForRef = p.relayedFrom ? (lastUplinkBySender.get(p.relayedFrom)||null) : null; obj.armed = obj.waitForRef?false:true; }
+
+    packets.push(obj);
+  }
+
+  function appendHistory(pk,name){ if(!name) return; if(!pk.histHead){ pk.histHead={name,next:null}; pk.histTail=pk.histHead; return; } if(pk.histTail.name===name) return; pk.histTail.next={name,next:null}; pk.histTail=pk.histTail.next; }
+  function historyToArray(head){ const a=[]; for(let c=head;c;c=c.next) a.push(c.name); return a; }
+
+  function markStarted(pk){
+    pk.started=true; pk.startTs=Date.now(); appendHistory(pk, pk.from);
+    if (!pk.metaRef.addedToFeed) { pk.metaRef.startTs=pk.startTs; addOneLine(pk.metaRef); pk.metaRef.addedToFeed=true; }
+    else { pk.metaRef.startTs=pk.startTs; updateOneLineTime(pk.metaRef); }
+    if (!pk.logFrom) pk.logFrom = addToNodeLog(pk.from, pk.logFromData);
+    if (pk.logFrom){ pk.logFrom.ts = pk.startTs; if (currentNodeId===pk.from || currentApId===pk.from) renderNodeLog(); }
+    setFeedTitleFromPath(pk.metaRef);
+  }
+  function markArrived(pk,endName){
+    appendHistory(pk,endName); pk.metaRef.path=historyToArray(pk.histHead); setFeedTitleFromPath(pk.metaRef);
+    if (!pk.logTo) pk.logTo = addToNodeLog(pk.to, pk.logToData);
+    if (pk.logTo){ pk.logTo.ts = Date.now(); renderNodeLog(); }
+
+    // beacons
+    if(pk.isBeacon && pk.kind==='up'){
+      spawn('down', {
+  from: pk.to,           // AP replying
+  to: pk.from,           // back to device
+  relayedFrom: pk.from,
+  status: 'beacon',
+  alg: 'BEACON',
+  text: pk.to,           // <-- AP name as message (e.g., AP1)
+  ciphertextB64: '',
+  isBeacon: true,
+  seq: nextSeq(pk.from)
+    });
+    }
+    if(pk.isBeacon && pk.kind==='down'){
+      const st=ensureStateFor(pk.to); st.online=true; st.connected=pk.from;
+      if(currentNodeId===pk.to) renderNodeLog();
+    }
+  }
+
+  function drawScene(now){
+    const {aps,devs,apMap,devMap}=layoutPositions();
+    aps.forEach(ap=> radialBall(apMap[ap.id].x,apMap[ap.id].y,44,'#1ea0ff',ap.id,false,now/1000,ap.rogue));
+    devs.forEach((d,i)=>{ const online=ensureStateFor(d.id).online; const c=online?colorForDevice(d.id):'#8a94a7'; radialBall(layoutPositions().devMap[d.id].x,layoutPositions().devMap[d.id].y,40,c,d.name||d.id,online,now/1000+i*0.3,false); });
+    return layoutPositions();
+  }
+
+  function animate(){
+    const now=performance.now(), dt=Math.min(0.1,(now-lastTick)/1000); lastTick=now;
+    fitCanvas(); ctx.clearRect(0,0,canvas.clientWidth,canvas.clientHeight);
+    const {apMap,devMap}=drawScene(now);
+
+    for(const pk of packets){
+      if(!pk.armed && pk.waitForRef){ if(pk.waitForRef.done) pk.armed=true; else continue; }
+      if(pk.armed && !pk.started) markStarted(pk);
+
+      const start=(pk.kind==='up')?devMap[pk.from]:apMap[pk.from];
+      const end  =(pk.kind==='up')?apMap[pk.to]:devMap[pk.to];
+      if(!start || !end){ pk.done=true; continue; }
+
+      const dx=end.x-start.x, dy=end.y-start.y, dist=Math.max(1,Math.hypot(dx,dy));
+      if(!globalPaused && !pk.frozen && !pk.done){
+        pk.progress += (cmToPx(speedCmPerSec)*dt)/dist;
+        if(pk.progress>=1){ pk.progress=1; pk.done=true; markArrived(pk, pk.to); }
+      }
+      if(!pk.done) drawEnvelope(start.x+dx*pk.progress, start.y+dy*pk.progress, 16, pk.color);
+    }
+    for(let i=packets.length-1;i>=0;i--) if(packets[i].done) packets.splice(i,1);
+    requestAnimationFrame(animate);
+  }
+  animate();
+
+  document.getElementById('pauseAll').onclick=()=>{globalPaused=!globalPaused; document.getElementById('pauseAll').textContent=globalPaused?'▶️ Resume':'⏸️ Pause & Inspect';};
+  document.getElementById('refresh').onclick=()=> socket.emit('topology:get');
+
+  /* ---------- hit test & inspector ---------- */
+  function hitThing(e){
+    const r=canvas.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+    const {aps,apMap,devMap}=layoutPositions(); const R=44;
+    for(const ap of aps){const p=apMap[ap.id]; if(Math.hypot(mx-p.x,my-p.y)<=R) return {type:'ap', id:ap.id, rogue:ap.rogue};}
+    for(const d of devicesToDraw()){const p=devMap[d.id]; if(Math.hypot(mx-p.x,my-p.y)<=R) return {type:'dev', id:d.id};}
+    let best=null,bestD=16;
+    for(const pk of packets){
+      if(!pk.armed) continue;
+      const p1=(pk.kind==='up')?devMap[pk.from]:apMap[pk.from];
+      const p2=(pk.kind==='up')?apMap[pk.to]:devMap[pk.to];
+      if(!p1||!p2) continue;
+      const x=p1.x+(p2.x-p1.x)*pk.progress, y=p1.y+(p2.y-p1.y)*pk.progress;
+      const d=Math.hypot(mx-x,my-y); if(d<bestD){best={type:'pkt',pk}; bestD=d;}
+    }
+    return best;
+  }
+  canvas.addEventListener('mousemove',e=>{ canvas.style.cursor = hitThing(e)?'pointer':'default'; });
+  canvas.addEventListener('click',e=>{
+    const t=hitThing(e); if(!t) return;
+    if(t.type==='dev') openNodeModal({isAP:false,id:t.id,name:t.id});
+    else if(t.type==='ap') openApModal({id:t.id,name:t.id,rogue:t.rogue});
+    else if(t.type==='pkt'){ t.pk.frozen=true; openInspector(t.pk); }
+  });
+
+  const modal=document.getElementById('modal');
+  const pRoute=_id('pRoute'), pKind=_id('pKind'), pSeq=_id('pSeq'), pStatus=_id('pStatus'), pTime=_id('pTime'),
+        pAlg=_id('pAlg'), pCt=_id('pCt'), pEncRaw=_id('pEncRaw'), pPriv=_id('pPriv'), pPlain=_id('pPlain'), pPath=_id('pPath');
+  function _id(x){return document.getElementById(x)}
+  let inspected=null;
+
+  function openInspector(pk){
+    inspected=pk;
+    const meta=pk.metaRef||metaById.get(pk.id)||{};
+    pRoute.textContent=`${pk.from} → ${pk.to}`+(pk.relayedFrom?` (relay of ${pk.relayedFrom})`:'');
+    pKind.textContent=pk.kind; pSeq.textContent=pk.seq||'?'; pStatus.textContent=pk.status||'—';
+    pTime.textContent= pk.startTs?new Date(pk.startTs).toLocaleString() : (meta.startTs?new Date(meta.startTs).toLocaleString():'queued');
+    pAlg.textContent=meta.alg||'RSA-OAEP-256';
+    const isBeacon = (meta.alg==='BEACON' || meta.alg==='EVIL-BEACON');
+    const b64 = isBeacon ? '' : (pk.ciphertextB64 || meta.ciphertextB64 || '');
+    pCt.textContent = b64 || '(none)';
+    pEncRaw.textContent = isBeacon
+  ? (meta.text || pk.text || '(none)')
+  : (b64 ? `(binary, ${atob(b64).length} bytes)` : '(n/a)');
+    pPath.textContent=(meta.path?.length?meta.path:historyToArray(pk.histHead)||[]).join(' → ')||'(not started)';
+    pPriv.value=''; pPlain.textContent= isBeacon ? '(not encrypted — beacon)' : '(not decrypted)';
+    modal.classList.add('open');
+  }
+  document.getElementById('btnClose').onclick=()=>{ if(inspected){ inspected.frozen=false; inspected=null; } modal.classList.remove('open'); };
+  document.getElementById('btnResume').onclick=()=>{ if(inspected){ inspected.frozen=false; inspected=null; } modal.classList.remove('open'); };
+  document.getElementById('btnDecrypt').onclick=async ()=>{
+    try{
+      if(!inspected) return;
+      const meta=inspected.metaRef||{};
+      if(meta.alg==='BEACON'||meta.alg==='EVIL-BEACON'){ pPlain.textContent='(not encrypted — beacon)'; return; }
+      const ctB64=inspected.ciphertextB64 || meta.ciphertextB64 || ''; if(!ctB64) throw new Error('No ciphertext.');
+      const key=await importPkcs8FromUser(pPriv.value);
+      const pt=await crypto.subtle.decrypt({name:'RSA-OAEP'}, key, new Uint8Array([...atob(ctB64)].map(c=>c.charCodeAt(0))));
+      pPlain.textContent=new TextDecoder().decode(pt);
+    }catch(e){ pPlain.textContent='❌ Decrypt error: '+(e.message||e); }
+  };
+
+  /* ---------- node modals ---------- */
+  const nmodal=_id('nmodal'), nTitle=_id('nTitle'), nStateText=_id('nStateText'), nApSelect=_id('nApSelect'),
+        nConnect=_id('nConnect'), nGoOffline=_id('nGoOffline'), nMsg=_id('nMsg'), nTarget=_id('nTarget'),
+        nSend=_id('nSend'), nClose=_id('nClose'), nInbox=_id('nInbox'), nStatus=_id('nStatus'),
+        apControls=_id('apControls'), deviceControls=_id('deviceControls'), apInfo=_id('apInfo'), rogueTools=_id('rogueTools'), apInbox=_id('apInbox'),
+        malTarget=_id('malTarget'), malSend=_id('malSend');
+  let currentNodeId=null, currentApId=null;
+
+  function buildTargets(forId){
+    const opts=[], st=ensureStateFor(forId);
+    if(st.online && st.connected){ const ap=allAps().find(a=>a.id===st.connected); if(ap) opts.push({id:`AP@${ap.id}`,label:`Connected AP (${ap.id})`}); }
+    (topology.devices||[]).forEach(d=>{ if(d.id!==forId && ensureStateFor(d.id).online) opts.push({id:d.id,label:d.name||d.id}); });
+    nTarget.innerHTML=opts.map(o=>`<option value="${o.id}">${o.label}</option>`).join('');
+  }
+  function buildApSelect(){ const aps=allAps(); nApSelect.innerHTML=aps.map(a=>`<option value="${a.id}">${a.id}${a.rogue?' (rogue)':''}</option>`).join(''); }
+  function renderNodeLog(){ const id=currentNodeId||currentApId, box=(currentNodeId)?nInbox:apInbox, list=nodeLogs.get(id)||[];
+    box.innerHTML = list.length ? list.map(p=>`<div style="padding:8px;border-radius:10px;border:1px solid rgba(120,180,255,.15);background:rgba(14,22,40,.66);margin-bottom:8px">
+      #${p.seq||'?'} • ${p.ts?new Date(p.ts).toLocaleTimeString():'queued'} • <b>${p.status||''}</b><br/>
+      ${
+        p.alg==='EVIL-BEACON' ? `Malicious beacon (not encrypted): ${p.text || '(none)'}` :
+        p.alg==='BEACON'      ? `Beacon (not encrypted): ${p.text || '(none)'}` :
+        (p.ciphertextB64 ? `Encrypted (${p.alg||'RSA-OAEP'}) • ${p.ciphertextB64.length} b64 chars` : (p.text||'(empty)'))
+      }
+    </div>`).join('') : '<div class="muted">No packets yet.</div>'; }
+
+  function openNodeModal(node){
+    currentApId=null; currentNodeId=node.id;
+    const online=ensureStateFor(node.id).online; nTitle.textContent=node.name||node.id;
+    deviceControls.style.display='block'; apControls.style.display='none';
+    nStateText.textContent='Status: '+(online?'Online':'Offline');
+    nConnect.style.display=online?'none':'inline-block'; nGoOffline.style.display=online?'inline-block':'none';
+    buildApSelect(); nMsg.value=`hello from ${node.name||node.id}`; buildTargets(node.id);
+    nStatus.textContent=''; renderNodeLog(); nmodal.classList.add('open'); document.getElementById('sendRow').style.display=online?'flex':'none';
+  }
+  function openApModal(ap){
+    currentNodeId=null; currentApId=ap.id; deviceControls.style.display='none'; apControls.style.display='block';
+    apInfo.innerHTML=`<b>${ap.id}</b> ${ap.rogue?'<span style="padding:1px 6px;border-radius:9px;background:rgba(185,28,28,.3);border:1px solid rgba(185,28,28,.6)">rogue</span>':''}`;
+    rogueTools.style.display=ap.rogue?'block':'none';
+    const items=(topology.devices||[]).map(d=>({id:d.id,label:d.name||d.id})); malTarget.innerHTML=items.map(o=>`<option value="${o.id}">${o.label}</option>`).join('');
+    renderNodeLog(); nmodal.classList.add('open');
+  }
+  nClose.onclick=()=> nmodal.classList.remove('open');
+
+  // REAL encryption on every send
+  nSend.onclick = async () => {
+    const id = currentNodeId; if(!id) return;
+    const text = nMsg.value || ''; const target = nTarget.value || '';
+
+    if (target.startsWith('AP@')) {
+      const apId = target.slice(3);
+      const ct   = await rsaEncryptWithId(apId, text);
+      spawn('up',{from:id,to:apId,status:'sent',alg:'RSA-OAEP-256',ciphertextB64:ct,text:'',seq:nextSeq(id)});
+      nStatus.textContent=`Sent to ${apId} (RSA-encrypted)`; return;
+    }
+
+    const st=ensureStateFor(id); const apId=st.connected || 'AP1';
+    const ctUp   = await rsaEncryptWithId(apId, text);
+    spawn('up',{from:id,to:apId,status:'sent',alg:'RSA-OAEP-256',ciphertextB64:ctUp,text:'',seq:nextSeq(id)});
+
+    const ctDown = await rsaEncryptWithId(target, text);
+    spawn('down',{from:apId,to:target,relayedFrom:id,status:'relay',alg:'RSA-OAEP-256',ciphertextB64:ctDown,text:'',seq:nextSeq(id)});
+
+    nStatus.textContent=`Sent to ${target} via ${apId} (RSA-encrypted both legs)`;
+  };
+
+  // beacons (not encrypted)
+  document.getElementById('nConnect').onclick = () => {
+  const id = currentNodeId; if (!id) return;
+  const apId = nApSelect.value || 'AP1';
+
+  // Beacon uplink carries the DEVICE name as plaintext
+  spawn('up', {
+    from: id, to: apId,
+    status: 'beacon',
+    alg: 'BEACON',
+    text: id,                // <-- Device name as message
+    ciphertextB64: '',
+    isBeacon: true,
+    seq: nextSeq(id)
+  });
+
+  nStatus.textContent = `Connecting to ${apId}…`;
+};
+  document.getElementById('nGoOffline').onclick=()=>{ const st=ensureStateFor(currentNodeId); st.online=false; st.connected=null;
+    nStateText.textContent='Status: Offline'; document.getElementById('nConnect').style.display='inline-block'; document.getElementById('nGoOffline').style.display='none'; document.getElementById('sendRow').style.display='none'; };
+
+  // rogue malicious beacon
+  document.getElementById('malSend').onclick=()=>{ const apId=currentApId; if(!apId) return; const devId=malTarget.value;
+    spawn('down',{from:apId,to:devId,relayedFrom:devId,status:'beacon',alg:'EVIL-BEACON',text:'EvilBeacon',ciphertextB64:'',isBeacon:true,malicious:true,seq:nextSeq(devId)});
+  };
+
+  // sockets: (kept for demo source, we still spawn locally for encryption)
+  socket.on('packet:uplink',   p=> spawn('up',p));
+  socket.on('packet:downlink', p=> spawn('down',p));
+
+  // add nodes
+  document.getElementById('addBtn').onclick=async ()=>{ const inp=_id('deviceName'); const name=(inp.value||'').trim(); if(!name) return;
+    await fetch('/api/device/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deviceId:name})});
+    ensureStateFor(name).online=false; ensureStateFor(name).connected=null; await ensureKeypair(name); inp.value=''; socket.emit('topology:get');
+  };
+  document.getElementById('addApBtn').onclick=async ()=>{ const inp=_id('apName'); const name=(inp.value||'').trim(); if(!name) return; localAps.push({id:name,name,rogue:false}); await ensureKeypair(name); inp.value=''; };
+  document.getElementById('addRogueBtn').onclick=async ()=>{ const inp=_id('rogueName'); const name=(inp.value||'').trim(); if(!name) return; localAps.push({id:name,name,rogue:true}); await ensureKeypair(name); inp.value=''; };
+
+  // all packets inspector
+  const histModal=_id('histModal'), hlist=_id('hlist');
+  document.getElementById('inspectAll').onclick=()=>{
+    hlist.innerHTML=allPackets.map(m=>`<div style="display:grid;grid-template-columns:60px 1fr 160px 80px 100px;gap:10px;padding:8px 12px;border-bottom:1px solid rgba(120,180,255,.12);cursor:pointer" data-id="${m.id}">
+      <div class="mono">#${m.seq||'?'}</div>
+      <div class="mono">${m.from} → ${m.to}${m.relayedFrom?` (relay of ${m.relayedFrom})`:''}</div>
+      <div class="mono">${m.startTs?new Date(m.startTs).toLocaleString():'queued'}</div>
+      <div class="mono">${m.kind}</div>
+      <div class="mono">${m.alg==='BEACON'?'beacon':m.alg==='EVIL-BEACON'?'evil-beacon':`enc • ${m.ciphertextB64?.length||0}`}</div>
+    </div>`).join('');
+    hlist.querySelectorAll('[data-id]').forEach(row=>{
+      row.addEventListener('click',()=>{
+        const id=+row.getAttribute('data-id'); const m=metaById.get(id); if(!m) return;
+        openInspector({id,seq:m.seq,kind:m.kind,from:m.from,to:m.to,relayedFrom:m.relayedFrom,status:m.status,startTs:m.startTs,alg:m.alg,ciphertextB64:m.ciphertextB64,histHead:null,metaRef:m});
+      });
+    });
+    histModal.classList.add('open');
+  };
+  document.getElementById('hClose').onclick=()=> histModal.classList.remove('open');
+
+  /* draggable panels */
+  (function(){
+    const HEADER=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--header-h')||'72')||72;
+    function clamp(v,min,max){return Math.max(min,Math.min(max,v))}
+    function makeDraggable(el){
+      const h=el.querySelector('.drag-handle')||el; let sx=0,sy=0,ox=0,oy=0,drag=false;
+      const r=el.getBoundingClientRect(); el.style.left=r.left+'px'; el.style.top=r.top+'px'; el.style.right='auto'; el.style.position='fixed';
+      h.addEventListener('pointerdown',e=>{ if(e.button!==0) return; drag=true; sx=e.clientX; sy=e.clientY; const rr=el.getBoundingClientRect(); ox=rr.left; oy=rr.top; h.setPointerCapture(e.pointerId); document.body.classList.add('dragging'); });
+      h.addEventListener('pointermove',e=>{ if(!drag) return; const dx=e.clientX-sx, dy=e.clientY-sy; let nx=ox+dx, ny=oy+dy; const maxX=innerWidth-el.offsetWidth-6, maxY=innerHeight-el.offsetHeight-6; nx=clamp(nx,6,maxX); ny=clamp(ny,HEADER+6,maxY); el.style.left=nx+'px'; el.style.top=ny+'px'; });
+      const end=e=>{ if(!drag) return; drag=false; document.body.classList.remove('dragging'); try{h.releasePointerCapture(e.pointerId)}catch(_){}}; h.addEventListener('pointerup',end); h.addEventListener('pointercancel',end);
+    }
+    window.addEventListener('DOMContentLoaded',()=>{ ['feed','ctrlPanel'].forEach(id=>{const el=document.getElementById(id); if(el) makeDraggable(el);}); });
+  })();
+</script>
+</body>
+</html>
