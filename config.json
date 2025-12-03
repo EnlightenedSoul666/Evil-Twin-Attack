@@ -1,0 +1,6 @@
+{
+  "port": 3000,
+  "apBssid": "AP1",
+  "psk": "correcthorsebattery",
+  "defaultDevices": ["Device1", "Device2"]
+}
